@@ -116,12 +116,13 @@ def main():
 
     down = plan_down(conf, platform="linux", tools={"nmcli": None, "wg-quick": shutil.which("wg-quick")})
     in_ns(*down.steps[0])
-    assert not Path("/etc/wireguard/envy-tunnel.conf").exists(), "client config left behind"
+    left = sh("sudo", "test", "-e", "/etc/wireguard/envy-tunnel.conf", check=False)
+    assert left.returncode != 0, "client config left behind"
     print("OK: disconnect removed the client tunnel and its config")
     mgr.uninstall_server()
     gone = sh("ip", "link", "show", "wg0", check=False, capture=True)
     assert gone.returncode != 0, "wg0 still present after uninstall"
-    assert not Path("/etc/sysctl.d/99-envy-tunnel.conf").exists()
+    assert sh("sudo", "test", "-e", "/etc/sysctl.d/99-envy-tunnel.conf", check=False).returncode != 0
     print("OK: uninstall removed the server setup")
     sh("sudo", "ip", "netns", "del", NS, check=False)
     print("WireGuard end-to-end test passed")

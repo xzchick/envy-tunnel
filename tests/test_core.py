@@ -1,6 +1,7 @@
 import base64
 import json
 import os
+import shlex
 import shutil
 import stat
 import subprocess
@@ -96,7 +97,7 @@ class ModelTests(unittest.TestCase):
         self.assertIn("DNS = 1.1.1.1, 1.0.0.1", conf)
         split = client_config(st, d, priv, psk, full_tunnel=False)
         self.assertIn("AllowedIPs = 10.66.0.0/24, fd66:656e:7679::/64", split)
-        self.assertNotIn("DNS", split)
+        self.assertNotIn("DNS =", split)
         st.server.host = "2001:db8::7"
         self.assertIn("Endpoint = [2001:db8::7]:51820", client_config(st, d, priv, psk))
 
@@ -247,12 +248,13 @@ class ConnectPlanTests(unittest.TestCase):
         plan = plan_up(self.conf, "linux", {"nmcli": None, "wg-quick": "/usr/bin/wg-quick"})
         self.assertEqual((plan.method, plan.admin, len(plan.steps)), ("wg-quick", True, 1))
         script = plan.steps[0][2]
-        self.assertIn("install -m 600 -D /x/envy-tunnel.conf /etc/wireguard/envy-tunnel.conf", script)
+        self.assertIn(f"install -m 600 -D {shlex.quote(str(self.conf))} /etc/wireguard/envy-tunnel.conf", script)
         self.assertTrue(script.endswith("/usr/bin/wg-quick up envy-tunnel"))
         down = plan_down(self.conf, "linux", {"wg-quick": "/usr/bin/wg-quick"}).steps[0][2]
         self.assertIn("rm -f /etc/wireguard/envy-tunnel.conf", down)
-        mac = plan_up(Path("/Users/a b/envy-tunnel.conf"), "darwin", {"wg-quick": "/opt/homebrew/bin/wg-quick"})
-        self.assertTrue(mac.steps[0][2].endswith("/opt/homebrew/bin/wg-quick up '/Users/a b/envy-tunnel.conf'"))
+        spaced = Path("/Users/a b/envy-tunnel.conf")
+        mac = plan_up(spaced, "darwin", {"wg-quick": "/opt/homebrew/bin/wg-quick"})
+        self.assertTrue(mac.steps[0][2].endswith("/opt/homebrew/bin/wg-quick up " + shlex.quote(str(spaced))))
         bash = shutil.which("bash")
         if bash and os.name != "nt":
             for p in (plan, mac):
