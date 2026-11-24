@@ -16,6 +16,7 @@ and return the exact commands — so every platform's plan is tested on every OS
 from __future__ import annotations
 
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -27,6 +28,7 @@ from .model import LOCAL_TUNNEL, TunnelError
 WINDOWS_WIREGUARD = [r"C:\Program Files\WireGuard\wireguard.exe",
                      r"C:\Program Files (x86)\WireGuard\wireguard.exe"]
 MAC_WG_QUICK = ["/opt/homebrew/bin/wg-quick", "/usr/local/bin/wg-quick"]
+LINUX_CONF = f"/etc/wireguard/{LOCAL_TUNNEL}.conf"
 
 
 @dataclass
@@ -95,9 +97,15 @@ def plan_up(conf: Path, platform: str | None = None, tools: dict | None = None) 
                               [nm, "connection", "import", "type", "wireguard", "file", str(conf)],
                               [nm, "connection", "up", LOCAL_TUNNEL]], ignore_failure={0})
     if tools.get("wg-quick"):
-        wq = tools["wg-quick"]
-        return Plan("wg-quick", [[wq, "down", str(conf)], [wq, "up", str(conf)]],
-                    admin=True, ignore_failure={0})
+        wq = shlex.quote(tools["wg-quick"])
+        if plat == "linux":
+            # Install into /etc/wireguard (the standard place; some distros confine
+            # wg-quick to it) and bring it up by name, all under one admin prompt.
+            script = (f"{wq} down {LOCAL_TUNNEL} >/dev/null 2>&1; "
+                      f"install -m 600 -D {shlex.quote(str(conf))} {LINUX_CONF} && {wq} up {LOCAL_TUNNEL}")
+        else:
+            script = f"{wq} down {shlex.quote(str(conf))} >/dev/null 2>&1; {wq} up {shlex.quote(str(conf))}"
+        return Plan("wg-quick", [["sh", "-c", script]], admin=True)
     return _manual(plat, conf)
 
 
@@ -115,7 +123,12 @@ def plan_down(conf: Path, platform: str | None = None, tools: dict | None = None
         return Plan("nmcli", [[nm, "connection", "down", LOCAL_TUNNEL],
                               [nm, "connection", "delete", LOCAL_TUNNEL]], ignore_failure={1})
     if tools.get("wg-quick"):
-        return Plan("wg-quick", [[tools["wg-quick"], "down", str(conf)]], admin=True)
+        wq = shlex.quote(tools["wg-quick"])
+        if plat == "linux":
+            script = f"{wq} down {LOCAL_TUNNEL}; rc=$?; rm -f {LINUX_CONF}; exit $rc"
+        else:
+            script = f"{wq} down {shlex.quote(str(conf))}"
+        return Plan("wg-quick", [["sh", "-c", script]], admin=True)
     return _manual(plat, conf)
 
 

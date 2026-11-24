@@ -245,9 +245,18 @@ class ConnectPlanTests(unittest.TestCase):
 
     def test_wg_quick_fallback_needs_admin(self):
         plan = plan_up(self.conf, "linux", {"nmcli": None, "wg-quick": "/usr/bin/wg-quick"})
-        self.assertEqual((plan.method, plan.admin), ("wg-quick", True))
-        mac = plan_up(self.conf, "darwin", {"wg-quick": "/opt/homebrew/bin/wg-quick"})
-        self.assertEqual(mac.steps[-1], ["/opt/homebrew/bin/wg-quick", "up", str(self.conf)])
+        self.assertEqual((plan.method, plan.admin, len(plan.steps)), ("wg-quick", True, 1))
+        script = plan.steps[0][2]
+        self.assertIn("install -m 600 -D /x/envy-tunnel.conf /etc/wireguard/envy-tunnel.conf", script)
+        self.assertTrue(script.endswith("/usr/bin/wg-quick up envy-tunnel"))
+        down = plan_down(self.conf, "linux", {"wg-quick": "/usr/bin/wg-quick"}).steps[0][2]
+        self.assertIn("rm -f /etc/wireguard/envy-tunnel.conf", down)
+        mac = plan_up(Path("/Users/a b/envy-tunnel.conf"), "darwin", {"wg-quick": "/opt/homebrew/bin/wg-quick"})
+        self.assertTrue(mac.steps[0][2].endswith("/opt/homebrew/bin/wg-quick up '/Users/a b/envy-tunnel.conf'"))
+        bash = shutil.which("bash")
+        if bash and os.name != "nt":
+            for p in (plan, mac):
+                self.assertEqual(subprocess.run([bash, "-n", "-c", p.steps[0][2]]).returncode, 0)
 
     def test_windows_tunnel_service(self):
         exe = r"C:\Program Files\WireGuard\wireguard.exe"

@@ -14,7 +14,7 @@ Runs in CI on a throwaway Ubuntu VM (needs root via sudo and wireguard-tools):
 Never run this on a machine you care about: it changes networking as root.
 """
 
-import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -22,8 +22,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from envy_tunnel.connect import plan_down, plan_up  # noqa: E402
 from envy_tunnel.manager import Manager  # noqa: E402
-from envy_tunnel.store import Store  # noqa: E402
+from envy_tunnel.store import Store, write_private  # noqa: E402
 
 NS = "envyc"
 
@@ -73,12 +74,14 @@ def main():
     assert key, "setup did not report the server key"
     print("server key:", key)
 
-    conf = work / "envy-tunnel.conf"
-    # No DNS line: the namespace has no resolvconf; everything else is ENVY's config.
+    # Connect exactly the way the app does on Linux without NetworkManager (the
+    # wg-quick plan), run inside the client namespace. The only change to ENVY's
+    # config: no DNS line, as the namespace has no resolvconf.
     text = "\n".join(l for l in mgr.config_for("ci-client").splitlines() if not l.startswith("DNS ="))
-    conf.write_text(text + "\n")
-    os.chmod(conf, 0o600)
-    in_ns("wg-quick", "up", str(conf))
+    conf = write_private(mgr.store.connect_path(), text + "\n")
+    up = plan_up(conf, platform="linux", tools={"nmcli": None, "wg-quick": shutil.which("wg-quick")})
+    assert up.method == "wg-quick" and up.admin
+    in_ns(*up.steps[0])
 
     in_ns("ping", "-c", "3", "-W", "3", "10.66.0.1")
     print("OK: client reaches the server through the tunnel")
@@ -111,7 +114,10 @@ def main():
     assert lost.returncode != 0, "a revoked device could still reach the server"
     print("OK: a revoked device is cut off")
 
-    in_ns("wg-quick", "down", str(conf), check=False)
+    down = plan_down(conf, platform="linux", tools={"nmcli": None, "wg-quick": shutil.which("wg-quick")})
+    in_ns(*down.steps[0])
+    assert not Path("/etc/wireguard/envy-tunnel.conf").exists(), "client config left behind"
+    print("OK: disconnect removed the client tunnel and its config")
     mgr.uninstall_server()
     gone = sh("ip", "link", "show", "wg0", check=False, capture=True)
     assert gone.returncode != 0, "wg0 still present after uninstall"
