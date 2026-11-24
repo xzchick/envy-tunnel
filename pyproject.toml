@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "envy-tunnel"
+version = "0.1.0"
+description = "ENVY Tunnel: your own WireGuard VPN on a server you control, with a native app window"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+keywords = ["wireguard", "vpn", "self-hosted", "privacy", "vps"]
+dependencies = [
+  "cryptography>=43",
+  "PyQt6>=6.7,<7",
+  "segno>=1.6,<2",
+]
+
+[project.urls]
+Homepage = "https://xzchick.github.io/homebrew-envy/tunnel/"
+Source = "https://github.com/xzchick/envy-tunnel"
+
+[project.scripts]
+envy-tunnel = "envy_tunnel.cli:main"
+
+[project.gui-scripts]
+envy-tunnel-gui = "envy_tunnel.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["envy_tunnel*"]
